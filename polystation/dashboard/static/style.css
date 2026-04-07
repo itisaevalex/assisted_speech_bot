@@ -833,10 +833,13 @@ body.resizing-row .gutter-horizontal {
 
 /* Trading tab — inner grid layout: main panels + gutter + trade log */
 #tab-trading {
-  display: grid !important;
   grid-template-rows: 1fr 5px 180px;
   overflow: hidden;
   min-height: 0;
+}
+
+#tab-trading.active {
+  display: grid;
 }
 
 /* ---- Logs tab ---------------------------------------------- */

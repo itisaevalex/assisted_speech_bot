@@ -286,10 +286,18 @@ async function refreshMarkets(append = false) {
   State.marketsLoading = true;
   try {
     const tab = State.activeTab;
+    const searchQuery = ($("#markets-search")?.value || "").trim();
+
     if (tab === "trending") {
       const data = await apiFetch("/api/markets/trending?limit=50");
       State.markets = data;
       State.marketsHasMore = false;
+    } else if (searchQuery.length >= 2) {
+      // Server-side search through events API
+      const resp = await apiFetch(`/api/markets/search?q=${encodeURIComponent(searchQuery)}&limit=100`);
+      State.markets = resp.data || [];
+      State.marketsHasMore = false;
+      State.marketsOffset = 0;
     } else {
       const offset = append ? State.marketsOffset : 0;
       const resp = await apiFetch(`/api/markets/?offset=${offset}&limit=100`);
@@ -320,21 +328,8 @@ function renderMarkets() {
   const tbody = $("#tbl-markets tbody");
   if (!tbody) return;
 
-  const rawQuery = ($("#markets-search")?.value || "").toLowerCase().trim();
-  // Expand common abbreviations for better search
-  const ALIASES = {
-    "btc": "bitcoin", "eth": "ethereum", "sol": "solana",
-    "doge": "dogecoin", "xrp": "ripple", "gta": "gta vi",
-    "nfl": "football", "nba": "basketball", "ufc": "fight",
-  };
-  const query = ALIASES[rawQuery] || rawQuery;
-  const markets = query
-    ? State.markets.filter(m => {
-        const q = m.question.toLowerCase();
-        const s = (m.slug || "").toLowerCase();
-        return q.includes(query) || s.includes(query);
-      })
-    : State.markets;
+  // Markets are already filtered server-side when searching
+  const markets = State.markets;
 
   if (markets.length === 0) {
     tbody.innerHTML = `<tr><td colspan="5" class="state-empty">No markets found</td></tr>`;
@@ -766,7 +761,19 @@ function bindMarketTabs() {
 function bindSearchInput() {
   const inp = $("#markets-search");
   if (!inp) return;
-  inp.addEventListener("input", () => renderMarkets());
+  let debounceTimer = null;
+  inp.addEventListener("input", () => {
+    clearTimeout(debounceTimer);
+    const val = inp.value.trim();
+    if (val.length >= 2) {
+      // Debounce server-side search
+      debounceTimer = setTimeout(() => refreshMarkets(false), 400);
+    } else if (val.length === 0) {
+      // Reset to default paginated view
+      debounceTimer = setTimeout(() => refreshMarkets(false), 200);
+    }
+    // For 1 char, do nothing (wait for more input)
+  });
 }
 
 // ------------------------------------------------------------------ //

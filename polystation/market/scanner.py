@@ -190,25 +190,43 @@ class MarketScanner:
         return [MarketInfo.from_gamma(m) for m in resp.json()]
 
     def search_markets(self, query: str, limit: int = 100) -> list[MarketInfo]:
-        """Search active open markets by keyword in the question text.
+        """Search active open markets by keyword.
 
-        The Gamma API ``slug`` parameter does partial matching on the slug
-        field, which is derived from the question text.
+        The Gamma API has no text search endpoint, so we load events
+        and search across event titles and sub-market questions.
         """
+        query_lower = query.lower().strip()
+        if not query_lower:
+            return []
+
+        # Load a large set of events (covers most meaningful markets)
         resp = requests.get(
-            f"{self.host}/markets",
-            params={
-                "limit": str(limit),
-                "active": "true",
-                "closed": "false",
-                "slug": query,
-                "order": "volumeNum",
-                "ascending": "false",
-            },
+            f"{self.host}/events",
+            params={"limit": "500", "active": "true", "closed": "false"},
             timeout=self.timeout,
         )
         resp.raise_for_status()
-        return [MarketInfo.from_gamma(m) for m in resp.json()]
+        events = resp.json()
+
+        results: list[MarketInfo] = []
+        seen: set[str] = set()
+
+        for event in events:
+            title = (event.get("title") or "").lower()
+            for m in event.get("markets", []):
+                if m.get("closed", False):
+                    continue
+                question = (m.get("question") or "").lower()
+                slug = (m.get("slug") or "").lower()
+                cid = m.get("conditionId", m.get("condition_id", ""))
+                if cid in seen:
+                    continue
+                if query_lower in title or query_lower in question or query_lower in slug:
+                    seen.add(cid)
+                    results.append(MarketInfo.from_gamma(m))
+
+        results.sort(key=lambda m: m.volume, reverse=True)
+        return results[:limit]
 
     def get_events(self, limit: int = 20, active: bool = True) -> list[dict[str, Any]]:
         """Fetch events (groups of related markets)."""

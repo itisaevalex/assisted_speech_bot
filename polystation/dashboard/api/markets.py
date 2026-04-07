@@ -70,7 +70,11 @@ def trending_markets(limit: int = 20) -> list[dict[str, Any]]:
 
 @router.get("/search", summary="Search markets by keyword")
 def search_markets(q: str, limit: int = 100) -> dict[str, Any]:
-    """Search active open markets by keyword. Returns up to *limit* results."""
+    """Search active open markets by keyword across event titles and questions.
+
+    Searches through the Gamma events API since there is no direct text
+    search endpoint. Results are sorted by volume descending.
+    """
     from polystation.market.scanner import MarketScanner
 
     scanner = MarketScanner()
@@ -84,6 +88,7 @@ def search_markets(q: str, limit: int = 100) -> dict[str, Any]:
         "query": q,
         "data": [_market_to_dict(m) for m in markets],
         "count": len(markets),
+        "has_more": False,
     }
 
 
