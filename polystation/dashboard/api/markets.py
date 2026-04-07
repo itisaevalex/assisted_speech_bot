@@ -69,7 +69,7 @@ def trending_markets(limit: int = 20) -> list[dict[str, Any]]:
 
 
 @router.get("/search", summary="Search markets by keyword")
-def search_markets(q: str, limit: int = 100) -> dict[str, Any]:
+def search_markets(q: str, limit: int = 500) -> dict[str, Any]:
     """Search active open markets by keyword across event titles and questions.
 
     Searches through the Gamma events API since there is no direct text
