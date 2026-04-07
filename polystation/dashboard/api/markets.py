@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 @router.get("/", summary="List active markets (Gamma API)")
-def list_markets(limit: int = 30) -> list[dict[str, Any]]:
+def list_markets(limit: int = 50) -> list[dict[str, Any]]:
     """Return active markets sorted by volume descending."""
     from polystation.market.scanner import MarketScanner
 

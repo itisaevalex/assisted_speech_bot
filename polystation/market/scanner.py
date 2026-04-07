@@ -83,7 +83,52 @@ class MarketScanner:
         self.timeout = timeout
 
     def get_active_markets(self, limit: int = 50) -> list[MarketInfo]:
-        """Fetch active, non-closed markets sorted by descending volume."""
+        """Fetch active markets via events endpoint for better diversity.
+
+        Uses the events API to get one representative market per event,
+        avoiding the problem of a single multi-market event (e.g. "2028
+        Presidential Election") flooding results with dozens of sub-markets.
+        Falls back to the flat markets endpoint on error.
+        """
+        try:
+            return self._markets_via_events(limit)
+        except Exception:
+            logger.warning("Events-based fetch failed, falling back to flat markets")
+            return self._flat_active_markets(limit)
+
+    def _markets_via_events(self, limit: int) -> list[MarketInfo]:
+        """Fetch events and extract the highest-volume market from each."""
+        resp = requests.get(
+            f"{self.host}/events",
+            params={
+                "limit": str(limit),
+                "active": "true",
+                "closed": "false",
+            },
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        events = resp.json()
+
+        results: list[MarketInfo] = []
+        for event in events:
+            markets = event.get("markets", [])
+            if not markets:
+                continue
+            # Filter to open sub-markets only
+            open_markets = [m for m in markets if not m.get("closed", False)]
+            if not open_markets:
+                continue
+            # Pick the sub-market with the highest volume
+            best = max(open_markets, key=lambda m: float(m.get("volumeNum", 0) or 0))
+            results.append(MarketInfo.from_gamma(best))
+
+        # Sort by volume descending
+        results.sort(key=lambda m: m.volume, reverse=True)
+        return results[:limit]
+
+    def _flat_active_markets(self, limit: int) -> list[MarketInfo]:
+        """Flat market list (no event dedup) — used as fallback."""
         resp = requests.get(
             f"{self.host}/markets",
             params={
