@@ -1292,6 +1292,11 @@ body.resizing-row .gutter-horizontal {
   color: var(--text-muted);
 }
 
+.risk-guard-badge.badge-active {
+  background: var(--green-glow);
+  color: var(--green);
+}
+
 .risk-guard-badge.badge-ok {
   background: var(--green-glow);
   color: var(--green);
@@ -1434,3 +1439,18 @@ body.resizing-row .gutter-horizontal {
   .perf-content   { grid-template-columns: 1fr; }
   .perf-kernels   { display: none; }
 }
+
+/* ================================================================
+   MARKET FAVORITES — Star button
+   ================================================================ */
+.star-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 4px;
+  color: var(--text-muted);
+  line-height: 1;
+}
+.star-btn.active { color: var(--yellow); }
+.star-btn:hover  { color: var(--yellow); opacity: 0.8; }

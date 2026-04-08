@@ -11,6 +11,44 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+@router.get("/history/{token_id}")
+async def fetch_backtest_data(token_id: str, interval: str = "max", fidelity: int = 60) -> dict[str, Any]:
+    """Fetch price history from CLOB and format it for backtesting.
+
+    Args:
+        token_id: Polymarket token identifier.
+        interval: Time interval — ``"1d"``, ``"1w"``, ``"1m"``, or ``"max"``.
+        fidelity: Candle resolution in seconds (default 60).
+
+    Returns:
+        Dict with ``token_id``, ``count``, ``prices`` list, and ``timestamps`` list.
+
+    Raises:
+        HTTPException: 502 when the upstream CLOB request fails.
+    """
+    import requests
+
+    try:
+        resp = requests.get(
+            "https://clob.polymarket.com/prices-history",
+            params={"market": token_id, "interval": interval, "fidelity": str(fidelity)},
+            timeout=15,
+        )
+        resp.raise_for_status()
+    except Exception as exc:
+        logger.error("Failed to fetch price history for %s: %s", token_id[:20], exc)
+        raise HTTPException(status_code=502, detail=f"CLOB history error: {exc}") from exc
+
+    history = resp.json().get("history", [])
+    prices = [h["p"] for h in history]
+    return {
+        "token_id": token_id,
+        "count": len(prices),
+        "prices": prices,
+        "timestamps": [h["t"] for h in history],
+    }
+
+
 class BacktestRequest(BaseModel):
     """Request body for a single backtest run.
 

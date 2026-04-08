@@ -83,10 +83,11 @@
           </div>
         </div>
 
-        <!-- Tabs: Active / Trending -->
+        <!-- Tabs: Active / Trending / Favorites -->
         <div id="markets-tabs">
           <button class="markets-tab active" data-tab="active">Active</button>
           <button class="markets-tab" data-tab="trending">Trending</button>
+          <button class="markets-tab" data-tab="favorites">Favorites</button>
         </div>
 
         <!-- Search box -->
@@ -105,6 +106,7 @@
           <table class="data-table" id="tbl-markets">
             <thead>
               <tr>
+                <th style="width:22px;"></th>
                 <th>Question</th>
                 <th class="text-right">Bid</th>
                 <th class="text-right">Ask</th>
@@ -581,26 +583,49 @@
       <div class="risk-guard-panel">
         <div class="risk-guard-header">
           <span class="risk-guard-title">RiskGuard</span>
-          <span class="risk-guard-badge badge-neutral">Not Configured</span>
+          <span id="risk-guard-badge" class="risk-guard-badge badge-neutral">Loading…</span>
         </div>
         <div class="risk-guard-body">
-          <div class="risk-guard-row">
-            <span class="risk-guard-lbl">Max Daily Loss</span>
-            <span class="risk-guard-val text-muted">—</span>
+          <div class="settings-field">
+            <label class="settings-label" for="rg-daily-loss">Max Daily Loss ($)</label>
+            <input type="number" id="rg-daily-loss" class="settings-input settings-input-short" step="10" placeholder="e.g. -500" />
+          </div>
+          <div class="settings-field">
+            <label class="settings-label" for="rg-gross-exposure">Max Gross Exposure ($)</label>
+            <input type="number" id="rg-gross-exposure" class="settings-input settings-input-short" step="100" placeholder="e.g. 10000" />
+          </div>
+          <div class="settings-field">
+            <label class="settings-label" for="rg-position-size">Max Position Size ($)</label>
+            <input type="number" id="rg-position-size" class="settings-input settings-input-short" step="50" placeholder="e.g. 1000" />
+          </div>
+          <div class="settings-field">
+            <label class="settings-label" for="rg-stake">Max Stake Per Trade ($)</label>
+            <input type="number" id="rg-stake" class="settings-input settings-input-short" step="10" placeholder="e.g. 500" />
+          </div>
+          <div class="settings-field">
+            <label class="settings-label" for="rg-max-orders">Max Active Orders</label>
+            <input type="number" id="rg-max-orders" class="settings-input settings-input-short" step="1" placeholder="e.g. 50" />
+          </div>
+          <div class="settings-field">
+            <label class="settings-label" for="rg-max-daily-trades">Max Daily Trades</label>
+            <input type="number" id="rg-max-daily-trades" class="settings-input settings-input-short" step="1" placeholder="e.g. 200" />
+          </div>
+          <div class="risk-guard-row" style="margin-top:6px;">
+            <span class="risk-guard-lbl">Daily Trade Count</span>
+            <span id="rg-daily-trade-count" class="risk-guard-val text-secondary">—</span>
           </div>
           <div class="risk-guard-row">
-            <span class="risk-guard-lbl">Max Gross Exposure</span>
-            <span class="risk-guard-val text-muted">—</span>
+            <span class="risk-guard-lbl">Daily Loss</span>
+            <span id="rg-daily-loss-val" class="risk-guard-val text-secondary">—</span>
           </div>
-          <div class="risk-guard-row">
-            <span class="risk-guard-lbl">Max Position Size</span>
-            <span class="risk-guard-val text-muted">—</span>
+          <div class="settings-actions" style="margin-top:8px;">
+            <button id="btn-save-risk-guard" class="btn btn-green btn-sm">Save RiskGuard</button>
+            <span id="risk-guard-save-status" class="settings-status"></span>
           </div>
-          <div class="risk-guard-row">
-            <span class="risk-guard-lbl">Kill Switch</span>
-            <span class="risk-guard-val text-muted">Inactive</span>
+          <div style="margin-top:10px;">
+            <div style="font-size:9px; color:var(--text-label); letter-spacing:1px; text-transform:uppercase; margin-bottom:4px;">Recent Vetoes</div>
+            <div id="rg-vetoes" style="font-size:10px; color:var(--text-muted); max-height:80px; overflow-y:auto;">None</div>
           </div>
-          <div class="risk-guard-note">RiskGuard will be configured in a future release.</div>
         </div>
       </div>
 
@@ -630,6 +655,55 @@
       </div>
 
     </div><!-- /.risk-top-row -->
+
+    <!-- Exit Automation Config panel -->
+    <div class="risk-exit-panel" style="margin:0 16px 12px;">
+      <div class="risk-guard-header">
+        <span class="risk-guard-title">Exit Automation</span>
+        <span id="exit-config-badge" class="risk-guard-badge badge-neutral">Loading…</span>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 16px; padding:10px 0;">
+        <div class="settings-field">
+          <label class="settings-label" for="exit-trailing-stop">Trailing Stop (%)</label>
+          <input type="number" id="exit-trailing-stop" class="settings-input settings-input-short" step="0.5" placeholder="e.g. 5.0 or blank" />
+        </div>
+        <div class="settings-field">
+          <label class="settings-label" for="exit-profit-target">Profit Target (%)</label>
+          <input type="number" id="exit-profit-target" class="settings-input settings-input-short" step="0.5" placeholder="e.g. 20.0 or blank" />
+        </div>
+        <div class="settings-field">
+          <label class="settings-label" for="exit-stop-loss">Stop Loss (%)</label>
+          <input type="number" id="exit-stop-loss" class="settings-input settings-input-short" step="0.5" placeholder="e.g. 10.0 or blank" />
+        </div>
+        <div class="settings-field">
+          <label class="settings-label" for="exit-max-hold">Max Hold (hours)</label>
+          <input type="number" id="exit-max-hold" class="settings-input settings-input-short" step="1" placeholder="e.g. 24 or blank" />
+        </div>
+        <div class="settings-field">
+          <label class="settings-label" for="exit-expiry-hours">Expiry Exit (hours before)</label>
+          <input type="number" id="exit-expiry-hours" class="settings-input settings-input-short" step="0.5" value="2.0" />
+        </div>
+        <div class="settings-field settings-field-toggle">
+          <label class="settings-label" for="exit-enabled">Enabled</label>
+          <label class="toggle-switch">
+            <input type="checkbox" id="exit-enabled" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+      <div class="risk-guard-row">
+        <span class="risk-guard-lbl">Tracked Positions</span>
+        <span id="exit-tracked-positions" class="risk-guard-val text-secondary">—</span>
+      </div>
+      <div class="settings-actions" style="margin-top:8px;">
+        <button id="btn-save-exit-config" class="btn btn-green btn-sm">Save Exit Config</button>
+        <span id="exit-config-save-status" class="settings-status"></span>
+      </div>
+      <div style="margin-top:10px;">
+        <div style="font-size:9px; color:var(--text-label); letter-spacing:1px; text-transform:uppercase; margin-bottom:4px;">Exit History</div>
+        <div id="exit-history" style="font-size:10px; color:var(--text-muted); max-height:80px; overflow-y:auto;">None</div>
+      </div>
+    </div><!-- /.risk-exit-panel -->
 
     <!-- Positions table -->
     <div class="risk-positions">
@@ -685,7 +759,10 @@
       </div>
       <div class="settings-field">
         <label class="settings-label">Token ID</label>
-        <input type="text" id="bt-token-id" class="settings-input" placeholder="Paste token_id or select from markets" autocomplete="off" />
+        <div style="display:flex; gap:6px; align-items:center;">
+          <input type="text" id="bt-token-id" class="settings-input" placeholder="Paste token_id or select from markets" autocomplete="off" style="flex:1;" />
+          <button id="btn-load-history" class="btn btn-sm" title="Load price history from Polymarket" style="flex-shrink:0; white-space:nowrap;">Load from market</button>
+        </div>
       </div>
       <div class="settings-field">
         <label class="settings-label">Price Sequence</label>

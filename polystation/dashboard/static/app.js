@@ -20,7 +20,8 @@ const State = {
   portfolio:       null,   // summary dict
   pnl:             null,   // pnl dict
   apiHealth:       null,   // health dict
-  activeTab:       "active",  // "active" | "trending"
+  activeTab:       "active",  // "active" | "trending" | "favorites"
+  favorites:       new Set(JSON.parse(localStorage.getItem("polystation_favorites") || "[]")),
   ws:              null,
   wsRetry:         0,
   refreshTimer:    null,
@@ -87,6 +88,19 @@ function escHtml(str) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+// ------------------------------------------------------------------ //
+// Favorites                                                           //
+// ------------------------------------------------------------------ //
+function toggleFavorite(conditionId) {
+  if (State.favorites.has(conditionId)) {
+    State.favorites.delete(conditionId);
+  } else {
+    State.favorites.add(conditionId);
+  }
+  localStorage.setItem("polystation_favorites", JSON.stringify([...State.favorites]));
+  renderMarkets();
 }
 
 function flash(el, cls) {
@@ -315,7 +329,51 @@ async function refreshMarkets(append = false) {
     const tab = State.activeTab;
     const searchQuery = ($("#markets-search")?.value || "").trim();
 
-    if (tab === "trending") {
+    if (tab === "favorites") {
+      // Filter already-loaded markets by favorites; fetch any missing ones
+      const favIds = [...State.favorites];
+      if (favIds.length === 0) {
+        if (seq !== _marketsSeq) return;
+        State.markets = [];
+        State.marketsHasMore = false;
+        renderMarkets();
+        const cnt = $("#markets-count");
+        if (cnt) cnt.textContent = "0";
+        return;
+      }
+      // Find which favorites are already loaded
+      const loaded = State.markets.filter(m => State.favorites.has(m.condition_id));
+      const loadedIds = new Set(loaded.map(m => m.condition_id));
+      const missing = favIds.filter(id => !loadedIds.has(id));
+      // Fetch missing favorites via price endpoint (gives us enough info)
+      const fetched = await Promise.allSettled(
+        missing.map(id => apiFetch(`/api/markets/price/${encodeURIComponent(id)}`))
+      );
+      fetched.forEach((result, i) => {
+        if (result.status === "fulfilled" && result.value) {
+          const p = result.value;
+          loaded.push({
+            condition_id: missing[i],
+            question: p.question || missing[i].substring(0, 20) + "…",
+            best_bid: p.best_bid,
+            best_ask: p.best_ask,
+            volume: p.volume,
+            last_trade_price: p.last_trade,
+            token_ids: [missing[i]],
+            outcomes: [],
+            neg_risk: false,
+            image: null,
+          });
+        }
+      });
+      if (seq !== _marketsSeq) return;
+      State.markets = loaded;
+      State.marketsHasMore = false;
+      renderMarkets();
+      const cnt = $("#markets-count");
+      if (cnt) cnt.textContent = String(loaded.length);
+      return;
+    } else if (tab === "trending") {
       const data = await apiFetch("/api/markets/trending?limit=50");
       if (seq !== _marketsSeq) return; // stale
       State.markets = data;
@@ -360,18 +418,25 @@ function renderMarkets() {
   const markets = State.markets;
 
   if (markets.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" class="state-empty">No markets found</td></tr>`;
+    const emptyMsg = State.activeTab === "favorites" ? "No favorites saved — click the star on any market" : "No markets found";
+    tbody.innerHTML = `<tr><td colspan="6" class="state-empty">${emptyMsg}</td></tr>`;
     return;
   }
 
   let html = markets.map(m => {
     const isSel = State.selectedMarket && m.condition_id === State.selectedMarket.condition_id;
+    const isFav = State.favorites.has(m.condition_id);
     const bid = m.best_bid != null ? Number(m.best_bid).toFixed(4) : "—";
     const ask = m.best_ask != null ? Number(m.best_ask).toFixed(4) : "—";
     const vol = fmtK(m.volume);
     const ltp = m.last_trade_price != null ? Number(m.last_trade_price).toFixed(4) : "—";
     return `
       <tr class="${isSel ? "selected" : ""}" data-cid="${escHtml(m.condition_id)}">
+        <td style="width:22px; padding:0 2px; text-align:center;">
+          <button class="star-btn ${isFav ? "active" : ""}" data-star="${escHtml(m.condition_id)}" title="${isFav ? "Remove from favorites" : "Add to favorites"}">
+            ${isFav ? "&#9733;" : "&#9734;"}
+          </button>
+        </td>
         <td class="truncate" title="${escHtml(m.question)}">${escHtml(m.question)}</td>
         <td class="num text-green">${bid}</td>
         <td class="num text-red">${ask}</td>
@@ -383,7 +448,7 @@ function renderMarkets() {
 
   // Add "Load More" button if there are more pages
   if (State.marketsHasMore) {
-    html += `<tr id="load-more-row"><td colspan="5" style="text-align:center; padding:8px;">
+    html += `<tr id="load-more-row"><td colspan="6" style="text-align:center; padding:8px;">
       <button class="btn btn-green" onclick="loadMoreMarkets()" style="width:100%;">
         Load More Markets (${State.markets.length} loaded)
       </button>
@@ -391,6 +456,14 @@ function renderMarkets() {
   }
 
   tbody.innerHTML = html;
+
+  // Star button click — toggle favorite without selecting market
+  tbody.querySelectorAll("button[data-star]").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleFavorite(btn.getAttribute("data-star"));
+    });
+  });
 
   tbody.querySelectorAll("tr[data-cid]").forEach(tr => {
     tr.addEventListener("click", () => {
@@ -1111,6 +1184,143 @@ async function refreshRisk() {
   } catch (e) {
     addLog("ERROR", `Risk fetch failed: ${e.message}`);
   }
+  await Promise.allSettled([refreshRiskGuard(), refreshExitConfig()]);
+}
+
+async function refreshRiskGuard() {
+  try {
+    const data = await apiFetch("/api/risk/guard");
+    renderRiskGuard(data);
+  } catch (e) {
+    addLog("WARN", `RiskGuard fetch failed: ${e.message}`);
+  }
+}
+
+function renderRiskGuard(data) {
+  const badge = $("#risk-guard-badge");
+  if (badge) {
+    badge.textContent = data.enabled ? "Active" : "Disabled";
+    badge.className = `risk-guard-badge ${data.enabled ? "badge-active" : "badge-neutral"}`;
+  }
+
+  const cfg = data.config || {};
+  const setVal = (id, val) => { const el = $(id); if (el && val != null) el.value = val; };
+  setVal("#rg-daily-loss", cfg.daily_loss_stop);
+  setVal("#rg-gross-exposure", cfg.max_gross_exposure);
+  setVal("#rg-position-size", cfg.max_position_per_token);
+  setVal("#rg-stake", cfg.max_stake_per_trade);
+  setVal("#rg-max-orders", cfg.max_active_orders);
+  setVal("#rg-max-daily-trades", cfg.max_daily_trades);
+
+  const tradeCountEl = $("#rg-daily-trade-count");
+  if (tradeCountEl) tradeCountEl.textContent = data.daily_trade_count != null ? String(data.daily_trade_count) : "—";
+
+  const dailyLossEl = $("#rg-daily-loss-val");
+  if (dailyLossEl) {
+    const v = data.daily_loss != null ? Number(data.daily_loss) : null;
+    dailyLossEl.textContent = v != null ? `$${fmt4(v)}` : "—";
+    dailyLossEl.className = `risk-guard-val ${pnlClass(v)}`;
+  }
+
+  const vetoesEl = $("#rg-vetoes");
+  if (vetoesEl) {
+    const vetoes = data.recent_vetoes || [];
+    vetoesEl.textContent = vetoes.length > 0 ? vetoes.join(" | ") : "None";
+  }
+}
+
+function bindRiskGuardForm() {
+  const btn = $("#btn-save-risk-guard");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    const statusEl = $("#risk-guard-save-status");
+    const numVal = (id) => { const el = $(id); return el && el.value !== "" ? Number(el.value) : undefined; };
+    const payload = {};
+    const dailyLoss = numVal("#rg-daily-loss");
+    const grossExp  = numVal("#rg-gross-exposure");
+    const posSize   = numVal("#rg-position-size");
+    const stake     = numVal("#rg-stake");
+    const maxOrders = numVal("#rg-max-orders");
+    const maxDailyTrades = numVal("#rg-max-daily-trades");
+    if (dailyLoss     != null) payload.daily_loss_stop          = dailyLoss;
+    if (grossExp      != null) payload.max_gross_exposure        = grossExp;
+    if (posSize       != null) payload.max_position_per_token    = posSize;
+    if (stake         != null) payload.max_stake_per_trade       = stake;
+    if (maxOrders     != null) payload.max_active_orders         = maxOrders;
+    if (maxDailyTrades != null) payload.max_daily_trades         = maxDailyTrades;
+    try {
+      const data = await apiPost("/api/risk/guard", payload);
+      renderRiskGuard(data);
+      showStatus(statusEl, "RiskGuard config saved", false);
+      addLog("INFO", "RiskGuard config updated");
+    } catch (e) {
+      showStatus(statusEl, `Error: ${e.message}`, true);
+    }
+  });
+}
+
+async function refreshExitConfig() {
+  try {
+    const data = await apiFetch("/api/risk/exits");
+    renderExitConfig(data);
+  } catch (e) {
+    addLog("WARN", `Exit config fetch failed: ${e.message}`);
+  }
+}
+
+function renderExitConfig(data) {
+  const badge = $("#exit-config-badge");
+  if (badge) {
+    const running = data.running || (data.config && data.config.enabled);
+    badge.textContent = running ? "Running" : "Stopped";
+    badge.className = `risk-guard-badge ${running ? "badge-active" : "badge-neutral"}`;
+  }
+
+  const cfg = data.config || {};
+  const setOptNum = (id, val) => { const el = $(id); if (el) el.value = val != null ? val : ""; };
+  setOptNum("#exit-trailing-stop", cfg.trailing_stop_pct);
+  setOptNum("#exit-profit-target", cfg.profit_target_pct);
+  setOptNum("#exit-stop-loss", cfg.stop_loss_pct);
+  setOptNum("#exit-max-hold", cfg.max_hold_hours);
+  const expiryEl = $("#exit-expiry-hours");
+  if (expiryEl && cfg.expiry_exit_hours != null) expiryEl.value = cfg.expiry_exit_hours;
+  const enabledEl = $("#exit-enabled");
+  if (enabledEl) enabledEl.checked = cfg.enabled || false;
+
+  const trackedEl = $("#exit-tracked-positions");
+  if (trackedEl) trackedEl.textContent = data.tracked_positions != null ? String(data.tracked_positions) : "—";
+
+  const histEl = $("#exit-history");
+  if (histEl) {
+    const hist = data.exit_history || [];
+    histEl.textContent = hist.length > 0 ? hist.map(h => JSON.stringify(h)).join(" | ") : "None";
+  }
+}
+
+function bindExitConfigForm() {
+  const btn = $("#btn-save-exit-config");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    const statusEl = $("#exit-config-save-status");
+    const numOrNull = (id) => { const el = $(id); return el && el.value !== "" ? Number(el.value) : null; };
+    const enabledEl = $("#exit-enabled");
+    const payload = {
+      trailing_stop_pct:  numOrNull("#exit-trailing-stop"),
+      profit_target_pct:  numOrNull("#exit-profit-target"),
+      stop_loss_pct:      numOrNull("#exit-stop-loss"),
+      max_hold_hours:     numOrNull("#exit-max-hold"),
+      expiry_exit_hours:  numOrNull("#exit-expiry-hours") ?? 2.0,
+      enabled:            enabledEl ? enabledEl.checked : false,
+    };
+    try {
+      const data = await apiPost("/api/risk/exits", payload);
+      renderExitConfig(data);
+      showStatus(statusEl, "Exit config saved", false);
+      addLog("INFO", `Exit automation ${payload.enabled ? "enabled" : "disabled"}`);
+    } catch (e) {
+      showStatus(statusEl, `Error: ${e.message}`, true);
+    }
+  });
 }
 
 function renderRiskSummary(s) {
@@ -1491,6 +1701,45 @@ function bindQuickTrade() {
 // Backtest Tab                                                          //
 // ------------------------------------------------------------------ //
 function bindBacktestTab() {
+  // "Load from market" button
+  const loadBtn = document.getElementById("btn-load-history");
+  if (loadBtn) {
+    loadBtn.addEventListener("click", async () => {
+      const tokenInput = document.getElementById("bt-token-id");
+      const pricesArea = document.getElementById("bt-prices");
+      const statusEl = document.getElementById("bt-status");
+      let tokenId = tokenInput?.value.trim();
+      // Auto-fill from selected market if empty
+      if (!tokenId && State.selectedMarket && State.selectedMarket.token_ids?.length) {
+        tokenId = State.selectedMarket.token_ids[State.selectedTokenIdx || 0];
+        if (tokenInput) tokenInput.value = tokenId;
+      }
+      if (!tokenId) {
+        if (statusEl) { statusEl.textContent = "Enter or select a token_id first"; statusEl.classList.add("visible", "error"); }
+        return;
+      }
+      loadBtn.disabled = true;
+      loadBtn.textContent = "Loading…";
+      if (statusEl) { statusEl.textContent = ""; statusEl.classList.remove("visible", "error"); }
+      try {
+        const resp = await apiFetch(`/api/backtest/history/${encodeURIComponent(tokenId)}?interval=max&fidelity=60`);
+        const prices = resp.prices || [];
+        if (prices.length === 0) {
+          if (statusEl) { statusEl.textContent = "No price history found"; statusEl.classList.add("visible", "error"); }
+          return;
+        }
+        if (pricesArea) pricesArea.value = prices.join(",");
+        if (statusEl) { statusEl.textContent = `Loaded ${prices.length} prices`; statusEl.classList.add("visible"); }
+        addLog("INFO", `Loaded ${prices.length} price points for backtest`);
+      } catch (e) {
+        if (statusEl) { statusEl.textContent = `Load failed: ${e.message}`; statusEl.classList.add("visible", "error"); }
+      } finally {
+        loadBtn.disabled = false;
+        loadBtn.textContent = "Load from market";
+      }
+    });
+  }
+
   const btn = document.getElementById("btn-run-backtest");
   if (!btn) return;
 
@@ -1611,6 +1860,8 @@ async function init() {
   bindSettingsTab();
   bindQuickTrade();
   bindBacktestTab();
+  bindRiskGuardForm();
+  bindExitConfigForm();
 
   // Load persisted settings
   loadSettingsFromStorage();
