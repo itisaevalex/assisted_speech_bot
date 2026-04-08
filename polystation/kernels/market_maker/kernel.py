@@ -76,7 +76,7 @@ class MarketMakerKernel(Kernel):
 
         # Cancel all our open orders via the execution layer.
         if self.engine and self.engine.execution:
-            self.engine.execution.cancel_all(kernel_name=self.name)
+            await self.engine.execution.cancel_all(kernel_name=self.name)
 
         logger.info(
             "MarketMakerKernel stopped after %d cycles", self._cycle_count
@@ -116,7 +116,7 @@ class MarketMakerKernel(Kernel):
 
         # Cancel existing orders placed by this kernel before quoting fresh ones.
         if self.engine.execution:
-            self.engine.execution.cancel_all(kernel_name=self.name)
+            await self.engine.execution.cancel_all(kernel_name=self.name)
 
         # Symmetric spread around mid, clamped to valid binary-market range.
         bid_price = max(0.01, min(0.99, round(mid - self.spread, 4)))
@@ -137,7 +137,7 @@ class MarketMakerKernel(Kernel):
                     size=self.size,
                     kernel_name=self.name,
                 )
-                self.engine.execution.submit_order(bid_order)
+                await self.engine.execution.submit_order(bid_order)
 
             # Sell side — only quote when we hold inventory to deliver.
             if net_size > 0:
@@ -149,7 +149,7 @@ class MarketMakerKernel(Kernel):
                     size=sell_size,
                     kernel_name=self.name,
                 )
-                self.engine.execution.submit_order(ask_order)
+                await self.engine.execution.submit_order(ask_order)
 
         logger.debug(
             "MM cycle: mid=%.4f bid=%.4f ask=%.4f net_pos=%.0f",

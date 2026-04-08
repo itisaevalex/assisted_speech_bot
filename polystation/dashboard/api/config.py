@@ -50,10 +50,7 @@ async def set_credentials(req: CredentialsRequest) -> dict[str, Any]:
     then rebuilds the execution engine's CLOB client.
     """
     import os
-    from py_clob_client.client import ClobClient
-    from py_clob_client.clob_types import ApiCreds
-    from py_clob_client.constants import POLYGON
-    from polystation.core.orders import OrderManager
+    from polystation.exchanges.polymarket import PolymarketExchange
     from polystation.trading.execution import ExecutionEngine
 
     # Set env vars for this process
@@ -69,24 +66,29 @@ async def set_credentials(req: CredentialsRequest) -> dict[str, Any]:
     if req.clob_pass_phrase:
         os.environ["CLOB_PASS_PHRASE"] = req.clob_pass_phrase
 
-    # Build CLOB client
+    # Build and connect the PolymarketExchange adapter with the provided credentials.
     try:
-        creds = None
-        if req.clob_api_key:
-            creds = ApiCreds(
-                api_key=req.clob_api_key,
-                api_secret=req.clob_secret,
-                api_passphrase=req.clob_pass_phrase,
-            )
-        client = ClobClient(host=req.host, key=req.pk or None, chain_id=POLYGON, creds=creds)
+        poly_exchange = PolymarketExchange(
+            host=req.host,
+            private_key=req.pk or None,
+            api_key=req.clob_api_key or None,
+            api_secret=req.clob_secret or None,
+            api_passphrase=req.clob_pass_phrase or None,
+        )
+        await poly_exchange.connect()
 
         eng = get_engine()
-        # Rewire execution engine with the real client
-        eng.execution = ExecutionEngine(client, eng.orders, eng.portfolio)
+        # Disconnect the previous exchange adapter if one is registered.
+        existing = eng.get_exchange("polymarket")
+        if existing is not None:
+            await existing.disconnect()
+
+        eng.register_exchange(poly_exchange)
+        eng.execution = ExecutionEngine(poly_exchange, eng.orders, eng.portfolio)
         eng.execution.set_dry_run(False)
 
-        logger.info("Credentials set — live trading client initialized")
+        logger.info("Credentials set — live PolymarketExchange initialized")
         return {"status": "ok", "dry_run": False, "host": req.host}
     except Exception as exc:
-        logger.error("Failed to initialize trading client: %s", exc)
+        logger.error("Failed to initialize PolymarketExchange: %s", exc)
         return {"status": "error", "error": str(exc)}

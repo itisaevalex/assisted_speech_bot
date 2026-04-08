@@ -55,6 +55,7 @@ class Order:
     avg_fill_price: float = 0.0
     market_id: str = ""
     kernel_name: str = ""     # Which kernel placed this order
+    exchange: str = ""         # Exchange adapter name (e.g. "polymarket")
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = ""
     server_order_id: str = ""
@@ -89,6 +90,7 @@ class Order:
             "order_type": self.order_type,
             "market_id": self.market_id,
             "kernel_name": self.kernel_name,
+            "exchange": self.exchange,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "server_order_id": self.server_order_id,
@@ -117,6 +119,7 @@ class OrderManager:
         market_id: str = "",
         kernel_name: str = "",
         order_type: str = "GTC",
+        exchange: str = "",
     ) -> Order:
         """Create, register, and return a new order in PENDING state.
 
@@ -128,6 +131,7 @@ class OrderManager:
             market_id: Optional parent market identifier.
             kernel_name: Name of the kernel placing the order.
             order_type: Time-in-force type. Defaults to "GTC".
+            exchange: Exchange adapter name (e.g. "polymarket").
 
         Returns:
             The newly created Order.
@@ -143,6 +147,7 @@ class OrderManager:
             market_id=market_id,
             kernel_name=kernel_name,
             order_type=order_type,
+            exchange=exchange,
         )
         self.orders[order_id] = order
         logger.info(

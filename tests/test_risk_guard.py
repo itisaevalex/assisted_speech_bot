@@ -405,29 +405,27 @@ class TestDayReset:
 class TestRiskGuardIntegration:
     """Verify that ExecutionEngine correctly gates orders through RiskGuard."""
 
-    def test_vetoed_order_is_rejected(self) -> None:
+    @pytest.mark.asyncio
+    async def test_vetoed_order_is_rejected(self) -> None:
         from polystation.core.orders import OrderManager, OrderStatus
         from polystation.core.portfolio import Portfolio
         from polystation.trading.execution import ExecutionEngine
 
         om = OrderManager()
         portfolio = Portfolio()
-        risk = RiskGuard(RiskConfig(max_stake_per_trade=1.0))  # very tight limit
-        engine = ExecutionEngine(
-            None, om, portfolio, risk_guard=risk  # type: ignore[arg-type]
-        )
+        risk = RiskGuard(RiskConfig(max_stake_per_trade=1.0))
+        engine = ExecutionEngine(None, om, portfolio, risk_guard=risk)
         engine.set_dry_run(True)
 
-        order = om.create_order(
-            token_id="tok-aaa", side="BUY", price=1.0, size=100.0
-        )
-        result = engine.submit_order(order)
+        order = om.create_order(token_id="tok-aaa", side="BUY", price=1.0, size=100.0)
+        result = await engine.submit_order(order)
 
         assert result is None
         assert order.status == OrderStatus.REJECTED
         assert "Risk:" in order.error
 
-    def test_approved_order_fills_normally(self) -> None:
+    @pytest.mark.asyncio
+    async def test_approved_order_fills_normally(self) -> None:
         from polystation.core.orders import OrderManager, OrderStatus
         from polystation.core.portfolio import Portfolio
         from polystation.trading.execution import ExecutionEngine
@@ -435,21 +433,18 @@ class TestRiskGuardIntegration:
         om = OrderManager()
         portfolio = Portfolio()
         risk = RiskGuard(RiskConfig(max_stake_per_trade=500.0))
-        engine = ExecutionEngine(
-            None, om, portfolio, risk_guard=risk  # type: ignore[arg-type]
-        )
+        engine = ExecutionEngine(None, om, portfolio, risk_guard=risk)
         engine.set_dry_run(True)
 
-        order = om.create_order(
-            token_id="tok-bbb", side="BUY", price=0.5, size=10.0  # value = 5 < 500
-        )
-        result = engine.submit_order(order)
+        order = om.create_order(token_id="tok-bbb", side="BUY", price=0.5, size=10.0)
+        result = await engine.submit_order(order)
 
         assert result is not None
         assert result.get("dry_run") is True
         assert order.status == OrderStatus.FILLED
 
-    def test_loss_recorded_after_fill(self) -> None:
+    @pytest.mark.asyncio
+    async def test_loss_recorded_after_fill(self) -> None:
         from polystation.core.orders import OrderManager
         from polystation.core.portfolio import Portfolio
         from polystation.trading.execution import ExecutionEngine
@@ -457,18 +452,13 @@ class TestRiskGuardIntegration:
         om = OrderManager()
         portfolio = Portfolio()
         risk = RiskGuard()
-        engine = ExecutionEngine(
-            None, om, portfolio, risk_guard=risk  # type: ignore[arg-type]
-        )
+        engine = ExecutionEngine(None, om, portfolio, risk_guard=risk)
         engine.set_dry_run(True)
 
-        # Buy first
         buy = om.create_order(token_id="tok-ccc", side="BUY", price=0.8, size=10.0)
-        engine.submit_order(buy)
+        await engine.submit_order(buy)
 
-        # Sell at a loss (lower price)
         sell = om.create_order(token_id="tok-ccc", side="SELL", price=0.5, size=10.0)
-        engine.submit_order(sell)
+        await engine.submit_order(sell)
 
-        # The loss should have been recorded
         assert risk.daily_loss < 0

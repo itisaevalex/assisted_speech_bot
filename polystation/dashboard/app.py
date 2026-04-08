@@ -4,8 +4,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from contextlib import asynccontextmanager
 from pathlib import Path
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -16,6 +16,7 @@ from polystation.core.orders import OrderManager
 from polystation.core.portfolio import Portfolio
 from polystation.core.prometheus import PolystationMetrics
 from polystation.core.risk import RiskGuard
+from polystation.exchanges.polymarket import PolymarketExchange
 from polystation.infra.redis_client import RedisManager
 from polystation.market.client import MarketDataClient
 from polystation.trading.execution import ExecutionEngine
@@ -32,43 +33,23 @@ def get_engine() -> TradingEngine:
     return engine
 
 
-async def _redis_heartbeat_loop(rm: RedisManager) -> None:
-    """Background task that sends a Redis heartbeat every 10 seconds.
+async def _prometheus_scrape_loop(prom: PolystationMetrics, eng: TradingEngine) -> None:
+    while True:
+        prom.update_from_engine(eng)
+        await asyncio.sleep(5)
 
-    Args:
-        rm: Connected RedisManager instance.
-    """
+
+async def _redis_heartbeat_loop(rm: RedisManager) -> None:
     while True:
         rm.heartbeat()
         await asyncio.sleep(10)
 
 
 async def _redis_snapshot_loop(eng: TradingEngine) -> None:
-    """Background task that snapshots portfolio state to Redis every 5 seconds.
-
-    Args:
-        eng: TradingEngine whose portfolio state is snapshotted.
-    """
     while True:
         if eng.redis and eng.redis.connected and eng.portfolio:
             eng.redis.snapshot_portfolio(eng.portfolio.get_summary())
         await asyncio.sleep(5)
-
-
-async def _prometheus_scrape_loop(eng: TradingEngine, interval: float = 5.0) -> None:
-    """Background task that refreshes Prometheus gauges every *interval* seconds.
-
-    Args:
-        eng: TradingEngine whose state is scraped.
-        interval: Seconds between each scrape cycle.
-    """
-    while True:
-        try:
-            if eng.prom is not None:
-                eng.prom.update_from_engine(eng)
-        except Exception:
-            logger.debug("Prometheus scrape error — skipping cycle", exc_info=True)
-        await asyncio.sleep(interval)
 
 
 @asynccontextmanager
@@ -79,47 +60,59 @@ async def lifespan(app: FastAPI):
     engine.market_data = MarketDataClient()
     engine.portfolio = Portfolio()
     engine.orders = OrderManager()
+
+    # MetricsCollector — in-memory performance tracking
     engine.metrics = MetricsCollector()
     engine.metrics.set_references(engine.portfolio, engine.orders)
 
-    # Prometheus metrics wrapper (graceful no-op when library is absent)
+    # Prometheus metrics (optional — no-op if prometheus_client not installed)
     engine.prom = PolystationMetrics()
 
-    # Pre-trade risk guard
+    # RiskGuard — pre-trade risk checks
     risk_guard = RiskGuard()
 
-    # Optional Redis integration — gracefully no-ops when unavailable
+    # Redis (optional — graceful degradation if unavailable)
     redis_url = os.getenv("REDIS_URL", "")
-    if redis_url:
-        engine.redis = RedisManager(redis_url)
-    else:
-        engine.redis = RedisManager()  # will try localhost, fail gracefully
+    engine.redis = RedisManager(redis_url) if redis_url else RedisManager()
 
-    # ExecutionEngine requires a ClobClient for live trading; pass None for
-    # dashboard-only / dry-run mode where no signed orders are submitted.
-    engine.execution = ExecutionEngine(  # type: ignore[arg-type]
-        None,
-        engine.orders,
-        engine.portfolio,
-        metrics=engine.metrics,
-        risk_guard=risk_guard,
-        redis_client=engine.redis,
+    # Connect Polymarket exchange adapter
+    poly_exchange = PolymarketExchange()
+    await poly_exchange.connect()
+    engine.register_exchange(poly_exchange)
+
+    # ExecutionEngine with all integrations
+    engine.execution = ExecutionEngine(
+        poly_exchange, engine.orders, engine.portfolio,
+        metrics=engine.metrics, risk_guard=risk_guard,
+        redis_client=engine.redis if engine.redis and engine.redis.connected else None,
     )
-    engine.execution.set_dry_run(True)  # Safe default — no live CLOB calls
+    engine.execution.set_dry_run(True)  # Safe default
+
     await engine.start()
-    snapshot_task = asyncio.create_task(engine.metrics.run_snapshots())
-    prom_task = asyncio.create_task(_prometheus_scrape_loop(engine))
-    redis_hb_task = asyncio.create_task(_redis_heartbeat_loop(engine.redis))
-    redis_snap_task = asyncio.create_task(_redis_snapshot_loop(engine))
+
+    # Background tasks
+    tasks = [
+        asyncio.create_task(engine.metrics.run_snapshots()),
+        asyncio.create_task(_prometheus_scrape_loop(engine.prom, engine)),
+    ]
+    if engine.redis and engine.redis.connected:
+        tasks.append(asyncio.create_task(_redis_heartbeat_loop(engine.redis)))
+        tasks.append(asyncio.create_task(_redis_snapshot_loop(engine)))
+
     logger.info("Polystation dashboard started")
     yield
+
+    # Shutdown
     engine.metrics.stop()
-    snapshot_task.cancel()
-    prom_task.cancel()
-    redis_hb_task.cancel()
-    redis_snap_task.cancel()
-    if engine.redis and engine.redis.connected:
+    for t in tasks:
+        t.cancel()
+
+    for ex in engine.exchanges.values():
+        await ex.disconnect()
+
+    if engine.redis:
         engine.redis.close()
+
     await engine.stop()
     logger.info("Polystation dashboard stopped")
 
@@ -133,17 +126,15 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # ------------------------------------------------------------------ #
-    # API routers                                                          #
-    # ------------------------------------------------------------------ #
+    # API routers
     from polystation.dashboard.api.markets import router as markets_router
-    from polystation.dashboard.api.metrics_endpoint import router as metrics_router
     from polystation.dashboard.api.orders import router as orders_router
     from polystation.dashboard.api.strategies import router as strategies_router
     from polystation.dashboard.api.portfolio import router as portfolio_router
     from polystation.dashboard.api.config import router as config_router
     from polystation.dashboard.api.performance import router as performance_router
     from polystation.dashboard.api.risk import router as risk_router
+    from polystation.dashboard.api.metrics_endpoint import router as metrics_router
     from polystation.dashboard.ws import router as ws_router
 
     app.include_router(markets_router, prefix="/api/markets", tags=["markets"])
@@ -153,14 +144,10 @@ def create_app() -> FastAPI:
     app.include_router(config_router, prefix="/api/config", tags=["config"])
     app.include_router(performance_router, prefix="/api/performance", tags=["performance"])
     app.include_router(risk_router, prefix="/api/risk", tags=["risk"])
-    # /metrics must be at root level — no prefix — for Prometheus scraping conventions
-    app.include_router(metrics_router, tags=["monitoring"])
+    app.include_router(metrics_router, tags=["metrics"])
     app.include_router(ws_router, tags=["websocket"])
 
-    # ------------------------------------------------------------------ #
-    # Static files (SPA)                                                   #
-    # Mount last so API routes take precedence.                            #
-    # ------------------------------------------------------------------ #
+    # Static files (SPA) — mount last so API routes take precedence
     static_dir = Path(__file__).parent / "static"
     if static_dir.exists():
         app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")

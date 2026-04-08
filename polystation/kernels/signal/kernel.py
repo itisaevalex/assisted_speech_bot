@@ -144,7 +144,7 @@ class SignalKernel(Kernel):
                 size=self.size,
                 kernel_name=self.name,
             )
-            self.engine.execution.submit_order(order)
+            await self.engine.execution.submit_order(order)
             self._signals_fired += 1
             logger.info(
                 "Signal fired: %s @ %.4f (change=%.4f, strategy=%s)",

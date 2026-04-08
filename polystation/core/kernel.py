@@ -25,6 +25,7 @@ class Kernel(ABC):
     """
 
     name: str = "unnamed"
+    required_exchange: str = ""  # If set, engine checks this exchange exists before start
 
     def __init__(self) -> None:
         self.status: KernelStatus = "stopped"

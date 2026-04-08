@@ -782,12 +782,12 @@ class TestOrderManagerGetSummary:
 def _make_engine() -> tuple[ExecutionEngine, OrderManager, Portfolio]:
     """Return a dry-run ExecutionEngine together with its real collaborators.
 
-    The ``clob_client`` is passed as None because dry_run mode never calls
-    any method on it.
+    The exchange is passed as None because dry_run mode never calls any
+    method on it.
     """
     mgr = OrderManager()
     portfolio = Portfolio()
-    engine = ExecutionEngine(clob_client=None, order_manager=mgr, portfolio=portfolio)  # type: ignore[arg-type]
+    engine = ExecutionEngine(exchange=None, order_manager=mgr, portfolio=portfolio)
     engine.set_dry_run(True)
     return engine, mgr, portfolio
 
@@ -795,118 +795,133 @@ def _make_engine() -> tuple[ExecutionEngine, OrderManager, Portfolio]:
 class TestExecutionEngineDryRunSubmit:
     """submit_order() in dry_run mode."""
 
-    def test_submit_returns_dict(self) -> None:
+    @pytest.mark.asyncio
+    async def test_submit_returns_dict(self) -> None:
         engine, mgr, _ = _make_engine()
         order = mgr.create_order(TOKEN_A, "BUY", 0.5, 100.0)
-        result = engine.submit_order(order)
+        result = await engine.submit_order(order)
         assert isinstance(result, dict)
 
-    def test_submit_includes_dry_run_flag(self) -> None:
+    @pytest.mark.asyncio
+    async def test_submit_includes_dry_run_flag(self) -> None:
         engine, mgr, _ = _make_engine()
         order = mgr.create_order(TOKEN_A, "BUY", 0.5, 100.0)
-        result = engine.submit_order(order)
+        result = await engine.submit_order(order)
         assert result is not None
         assert result.get("dry_run") is True
 
-    def test_submit_marks_order_as_filled(self) -> None:
+    @pytest.mark.asyncio
+    async def test_submit_marks_order_as_filled(self) -> None:
         engine, mgr, _ = _make_engine()
         order = mgr.create_order(TOKEN_A, "BUY", 0.5, 100.0)
-        engine.submit_order(order)
+        await engine.submit_order(order)
         assert order.status == OrderStatus.FILLED
 
-    def test_submit_records_portfolio_position(self) -> None:
+    @pytest.mark.asyncio
+    async def test_submit_records_portfolio_position(self) -> None:
         engine, mgr, portfolio = _make_engine()
         order = mgr.create_order(TOKEN_A, "BUY", 0.5, 100.0, market_id=MARKET_1)
-        engine.submit_order(order)
+        await engine.submit_order(order)
         pos = portfolio.get_position(TOKEN_A)
         assert pos is not None
         assert pos.size == pytest.approx(100.0)
 
-    def test_submit_portfolio_avg_price_matches_order_price(self) -> None:
+    @pytest.mark.asyncio
+    async def test_submit_portfolio_avg_price_matches_order_price(self) -> None:
         engine, mgr, portfolio = _make_engine()
         order = mgr.create_order(TOKEN_A, "BUY", 0.65, 200.0)
-        engine.submit_order(order)
+        await engine.submit_order(order)
         pos = portfolio.get_position(TOKEN_A)
         assert pos is not None
         assert pos.avg_entry_price == pytest.approx(0.65)
 
-    def test_submit_increments_portfolio_trade_count(self) -> None:
+    @pytest.mark.asyncio
+    async def test_submit_increments_portfolio_trade_count(self) -> None:
         engine, mgr, portfolio = _make_engine()
         order = mgr.create_order(TOKEN_A, "BUY", 0.5, 100.0)
-        engine.submit_order(order)
+        await engine.submit_order(order)
         assert portfolio.trade_count == 1
 
-    def test_submit_sell_realizes_pnl(self) -> None:
+    @pytest.mark.asyncio
+    async def test_submit_sell_realizes_pnl(self) -> None:
         engine, mgr, portfolio = _make_engine()
         buy_order = mgr.create_order(TOKEN_A, "BUY", 0.5, 100.0)
-        engine.submit_order(buy_order)
+        await engine.submit_order(buy_order)
         sell_order = mgr.create_order(TOKEN_A, "SELL", 0.7, 100.0)
-        engine.submit_order(sell_order)
+        await engine.submit_order(sell_order)
         assert portfolio.realized_pnl == pytest.approx(20.0)
 
 
 class TestExecutionEngineDryRunCancel:
     """cancel_order() in dry_run mode."""
 
-    def test_cancel_returns_true(self) -> None:
+    @pytest.mark.asyncio
+    async def test_cancel_returns_true(self) -> None:
         engine, mgr, _ = _make_engine()
         order = mgr.create_order(TOKEN_A, "BUY", 0.5, 100.0)
-        result = engine.cancel_order(order)
+        result = await engine.cancel_order(order)
         assert result is True
 
-    def test_cancel_marks_order_as_cancelled(self) -> None:
+    @pytest.mark.asyncio
+    async def test_cancel_marks_order_as_cancelled(self) -> None:
         engine, mgr, _ = _make_engine()
         order = mgr.create_order(TOKEN_A, "BUY", 0.5, 100.0)
-        engine.cancel_order(order)
+        await engine.cancel_order(order)
         assert order.status == OrderStatus.CANCELLED
 
-    def test_cancel_active_order_removed_from_active_list(self) -> None:
+    @pytest.mark.asyncio
+    async def test_cancel_active_order_removed_from_active_list(self) -> None:
         engine, mgr, _ = _make_engine()
         order = mgr.create_order(TOKEN_A, "BUY", 0.5, 100.0)
-        engine.cancel_order(order)
+        await engine.cancel_order(order)
         assert order not in mgr.get_active_orders()
 
 
 class TestExecutionEngineCancelAll:
     """cancel_all() in dry_run mode."""
 
-    def test_cancel_all_cancels_all_active_orders(self) -> None:
+    @pytest.mark.asyncio
+    async def test_cancel_all_cancels_all_active_orders(self) -> None:
         engine, mgr, _ = _make_engine()
         for _ in range(3):
             mgr.create_order(TOKEN_A, "BUY", 0.5, 100.0)
-        cancelled = engine.cancel_all()
+        cancelled = await engine.cancel_all()
         assert cancelled == 3
         assert len(mgr.get_active_orders()) == 0
 
-    def test_cancel_all_returns_count_cancelled(self) -> None:
+    @pytest.mark.asyncio
+    async def test_cancel_all_returns_count_cancelled(self) -> None:
         engine, mgr, _ = _make_engine()
         mgr.create_order(TOKEN_A, "BUY", 0.5, 100.0)
         mgr.create_order(TOKEN_B, "BUY", 0.3, 50.0)
-        count = engine.cancel_all()
+        count = await engine.cancel_all()
         assert count == 2
 
-    def test_cancel_all_with_kernel_name_only_cancels_matching(self) -> None:
+    @pytest.mark.asyncio
+    async def test_cancel_all_with_kernel_name_only_cancels_matching(self) -> None:
         engine, mgr, _ = _make_engine()
         mgr.create_order(TOKEN_A, "BUY", 0.5, 100.0, kernel_name="alpha")
         mgr.create_order(TOKEN_A, "BUY", 0.5, 100.0, kernel_name="alpha")
         mgr.create_order(TOKEN_B, "BUY", 0.3, 50.0, kernel_name="beta")
-        cancelled = engine.cancel_all(kernel_name="alpha")
+        cancelled = await engine.cancel_all(kernel_name="alpha")
         assert cancelled == 2
         # beta order must still be active
         beta_active = mgr.get_active_orders(kernel_name="beta")
         assert len(beta_active) == 1
 
-    def test_cancel_all_returns_zero_when_no_active_orders(self) -> None:
+    @pytest.mark.asyncio
+    async def test_cancel_all_returns_zero_when_no_active_orders(self) -> None:
         engine, mgr, _ = _make_engine()
         order = mgr.create_order(TOKEN_A, "BUY", 0.5, 100.0)
-        engine.submit_order(order)   # fills it → no longer active
-        count = engine.cancel_all()
+        await engine.submit_order(order)   # fills it → no longer active
+        count = await engine.cancel_all()
         assert count == 0
 
-    def test_cancel_all_kernel_filter_no_match_returns_zero(self) -> None:
+    @pytest.mark.asyncio
+    async def test_cancel_all_kernel_filter_no_match_returns_zero(self) -> None:
         engine, mgr, _ = _make_engine()
         mgr.create_order(TOKEN_A, "BUY", 0.5, 100.0, kernel_name="alpha")
-        count = engine.cancel_all(kernel_name="no-such-kernel")
+        count = await engine.cancel_all(kernel_name="no-such-kernel")
         assert count == 0
         # alpha order must be untouched
         assert len(mgr.get_active_orders()) == 1

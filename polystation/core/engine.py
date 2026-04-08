@@ -32,9 +32,28 @@ class TradingEngine:
         self.market_data: Any = None
         self.portfolio: Any = None
         self.execution: Any = None
-        self.metrics: Any = None
-        self.prom: Any = None  # PolystationMetrics — attached by dashboard lifespan
-        self.redis: Any = None  # RedisManager — attached by dashboard lifespan (optional)
+        self.exchanges: dict[str, Any] = {}  # name -> Exchange adapter
+
+    def register_exchange(self, exchange: Any) -> None:
+        """Register an exchange adapter with the engine.
+
+        Args:
+            exchange: A connected :class:`~polystation.exchanges.base.Exchange`
+                instance.  It is stored under ``exchange.name``.
+        """
+        self.exchanges[exchange.name] = exchange
+        logger.info("Registered exchange: %s", exchange.name)
+
+    def get_exchange(self, name: str) -> Any | None:
+        """Look up a registered exchange by name.
+
+        Args:
+            name: Short exchange identifier (e.g. ``"polymarket"``).
+
+        Returns:
+            The registered exchange adapter, or None when not found.
+        """
+        return self.exchanges.get(name)
 
     def register_kernel(self, kernel: Kernel) -> None:
         """Register a kernel with the engine. Does not start it."""
