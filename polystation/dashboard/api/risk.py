@@ -4,9 +4,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from polystation.dashboard.app import get_engine
+from polystation.dashboard.auth import require_auth
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ def risk_guard_status() -> dict[str, Any]:
     return {"enabled": False, "config": {}, "recent_vetoes": []}
 
 
-@router.post("/guard")
+@router.post("/guard", dependencies=[Depends(require_auth)])
 def update_risk_guard(config: dict[str, Any]) -> dict[str, Any]:
     """Update RiskGuard configuration fields at runtime.
 
@@ -77,7 +78,7 @@ def exit_config_status() -> dict[str, Any]:
     return {"error": "PositionManager not initialized"}
 
 
-@router.post("/exits")
+@router.post("/exits", dependencies=[Depends(require_auth)])
 async def update_exit_config(config: dict[str, Any]) -> dict[str, Any]:
     """Update the global PositionManager exit configuration at runtime.
 

@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 
 from polystation.dashboard.app import get_engine
+from polystation.dashboard.auth import require_auth
+from polystation.dashboard.rate_limit import rate_limit
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -16,15 +18,16 @@ logger = logging.getLogger(__name__)
 class CreateOrderRequest(BaseModel):
     """Request body for manual order placement via the dashboard."""
 
-    token_id: str
-    side: str       # "BUY" or "SELL"
-    price: float
-    size: float
+    token_id: str = Field(min_length=1)
+    side: Literal["BUY", "SELL"]
+    price: float = Field(gt=0, le=1.0)
+    size: float = Field(gt=0, le=100000)
     order_type: str = "GTC"
     expiry: str = ""
 
 
-@router.post("/create", summary="Place a manual order")
+@router.post("/create", summary="Place a manual order",
+             dependencies=[Depends(require_auth), Depends(rate_limit(10, 1))])
 async def create_order(req: CreateOrderRequest) -> dict[str, Any]:
     """Create an order and immediately submit it through the execution engine.
 

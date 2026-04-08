@@ -4,8 +4,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+
+from polystation.dashboard.auth import require_auth
+from polystation.dashboard.rate_limit import rate_limit
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -64,12 +67,12 @@ class BacktestRequest(BaseModel):
     kernel_type: str = "signal"
     strategy: str = "momentum"
     token_id: str
-    prices: list[float]
+    prices: list[float] = Field(max_length=50000)
     start_balance: float = 10000.0
     threshold: float = 0.02
 
 
-@router.post("/run")
+@router.post("/run", dependencies=[Depends(require_auth), Depends(rate_limit(5, 60))])
 async def run_backtest(req: BacktestRequest) -> dict[str, Any]:
     """Run a backtest by replaying a price sequence through the chosen kernel.
 

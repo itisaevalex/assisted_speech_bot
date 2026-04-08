@@ -4,16 +4,19 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from polystation.dashboard.app import get_engine
+from polystation.dashboard.auth import require_auth
+from polystation.dashboard.rate_limit import rate_limit
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.post("/dry-run", summary="Set dry-run mode")
+@router.post("/dry-run", summary="Set dry-run mode",
+             dependencies=[Depends(require_auth)])
 async def set_dry_run(enabled: bool = True) -> dict[str, Any]:
     """Enable or disable dry-run mode on the execution engine.
 
@@ -42,7 +45,8 @@ class CredentialsRequest(BaseModel):
     clob_pass_phrase: str = ""
 
 
-@router.post("/credentials", summary="Set API credentials and initialize trading client")
+@router.post("/credentials", summary="Set API credentials and initialize trading client",
+             dependencies=[Depends(require_auth), Depends(rate_limit(3, 60))])
 async def set_credentials(req: CredentialsRequest) -> dict[str, Any]:
     """Set CLOB credentials in the running process and reinitialize the execution engine.
 
@@ -91,4 +95,4 @@ async def set_credentials(req: CredentialsRequest) -> dict[str, Any]:
         return {"status": "ok", "dry_run": False, "host": req.host}
     except Exception as exc:
         logger.error("Failed to initialize PolymarketExchange: %s", exc)
-        return {"status": "error", "error": str(exc)}
+        return {"status": "error", "error": "Failed to initialize exchange. Check server logs."}

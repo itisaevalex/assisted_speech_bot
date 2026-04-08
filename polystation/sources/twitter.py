@@ -60,13 +60,17 @@ class TwitterSource(AudioSource):
         Raises:
             RuntimeError: If yt-dlp produces no output or the call fails.
         """
+        ALLOWED_YTDLP_OPTIONS = {"format", "quiet", "no_warnings", "socket_timeout"}
         ytdlp_cmd = ["yt-dlp", "--get-url"]
         for key, value in self.ytdlp_options.items():
+            if key not in ALLOWED_YTDLP_OPTIONS:
+                continue
             if isinstance(value, bool):
                 if value:
                     ytdlp_cmd.append(f"--{key}")
             else:
                 ytdlp_cmd.extend([f"--{key}", str(value)])
+        ytdlp_cmd.append("--")
         ytdlp_cmd.append(self.url)
 
         logger.debug("Running yt-dlp: %s", " ".join(ytdlp_cmd))

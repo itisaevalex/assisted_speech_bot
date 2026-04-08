@@ -42,7 +42,7 @@ def list_markets(offset: int = 0, limit: int = 100, order: str = "volumeNum") ->
         markets = scanner.get_markets_page(offset=offset, limit=limit, order=order)
     except Exception as exc:
         logger.error("Failed to fetch markets page: %s", exc)
-        raise HTTPException(502, f"Gamma API error: {exc}") from exc
+        raise HTTPException(502, "Gamma API error. Check server logs.") from exc
 
     return {
         "data": [_market_to_dict(m) for m in markets],
@@ -63,7 +63,7 @@ def trending_markets(limit: int = 20) -> list[dict[str, Any]]:
         markets = scanner.get_trending(limit=limit)
     except Exception as exc:
         logger.error("Failed to fetch trending markets: %s", exc)
-        raise HTTPException(502, f"Gamma API error: {exc}") from exc
+        raise HTTPException(502, "Gamma API error. Check server logs.") from exc
 
     return [_market_to_dict(m) for m in markets]
 
@@ -82,7 +82,7 @@ def search_markets(q: str, limit: int = 500) -> dict[str, Any]:
         markets = scanner.search_markets(q, limit=limit)
     except Exception as exc:
         logger.error("Market search failed for query '%s': %s", q, exc)
-        raise HTTPException(502, f"Gamma API error: {exc}") from exc
+        raise HTTPException(502, "Gamma API error. Check server logs.") from exc
 
     return {
         "query": q,
@@ -100,7 +100,7 @@ def get_order_book(token_id: str) -> dict[str, Any]:
         raw = eng.market_data.get_order_book(token_id)
     except Exception as exc:
         logger.error("Order book fetch failed for %s: %s", token_id, exc)
-        raise HTTPException(502, f"CLOB API error: {exc}") from exc
+        raise HTTPException(502, "CLOB API error. Check server logs.") from exc
 
     from polystation.market.book import OrderBook
 
@@ -127,7 +127,7 @@ def get_pricing(token_id: str) -> dict[str, Any]:
         }
     except Exception as exc:
         logger.error("Pricing fetch failed for %s: %s", token_id, exc)
-        raise HTTPException(502, f"CLOB API error: {exc}") from exc
+        raise HTTPException(502, "CLOB API error. Check server logs.") from exc
 
 
 @router.get("/health", summary="CLOB API health check")
@@ -164,4 +164,4 @@ def price_history(token_id: str, interval: str = "max", fidelity: int = 120) -> 
         return {"token_id": token_id, "interval": interval, "count": len(history), "history": history}
     except Exception as exc:
         logger.error("Price history fetch failed for %s: %s", token_id[:20], exc)
-        raise HTTPException(502, f"CLOB API error: {exc}") from exc
+        raise HTTPException(502, "CLOB API error. Check server logs.") from exc

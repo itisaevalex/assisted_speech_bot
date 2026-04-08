@@ -29,6 +29,7 @@ env/
 vosk-model-*/
 
 # Application data
+data/
 logs/
 trades/
 detections/

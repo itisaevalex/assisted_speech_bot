@@ -92,6 +92,9 @@ class YouTubeTranscriptSource(DataSource):
         if not self.video_url:
             return "No YouTube video URL configured."
 
+        if not self.video_url.startswith(("http://", "https://")):
+            return "Invalid URL — must start with http:// or https://"
+
         try:
             # Use yt-dlp to get video info (title, description)
             import asyncio
@@ -99,7 +102,7 @@ class YouTubeTranscriptSource(DataSource):
 
             result = await asyncio.to_thread(
                 subprocess.run,
-                ["yt-dlp", "--get-title", "--get-description", self.video_url],
+                ["yt-dlp", "--get-title", "--get-description", "--", self.video_url],
                 capture_output=True, text=True, timeout=30,
             )
 

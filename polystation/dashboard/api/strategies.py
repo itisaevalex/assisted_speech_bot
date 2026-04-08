@@ -4,10 +4,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from polystation.dashboard.app import get_engine
+from polystation.dashboard.auth import require_auth
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -34,13 +35,15 @@ def available_kernels() -> dict[str, Any]:
     import polystation.kernels.voice  # noqa: F401
     import polystation.kernels.market_maker  # noqa: F401
     import polystation.kernels.signal  # noqa: F401
+    import polystation.kernels.agentic  # noqa: F401
 
     from polystation.kernels import list_kernels
 
     return {"kernels": list_kernels()}
 
 
-@router.post("/start", summary="Instantiate and start a kernel")
+@router.post("/start", summary="Instantiate and start a kernel",
+             dependencies=[Depends(require_auth)])
 async def start_kernel(req: StartKernelRequest) -> dict[str, Any]:
     """Create a kernel from the registry and start it under the engine.
 
@@ -51,6 +54,7 @@ async def start_kernel(req: StartKernelRequest) -> dict[str, Any]:
     import polystation.kernels.voice  # noqa: F401
     import polystation.kernels.market_maker  # noqa: F401
     import polystation.kernels.signal  # noqa: F401
+    import polystation.kernels.agentic  # noqa: F401
 
     from polystation.kernels import create_kernel
 
@@ -75,7 +79,8 @@ async def start_kernel(req: StartKernelRequest) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.post("/stop/{name}", summary="Stop a running kernel")
+@router.post("/stop/{name}", summary="Stop a running kernel",
+             dependencies=[Depends(require_auth)])
 async def stop_kernel(name: str) -> dict[str, Any]:
     """Stop the named kernel and transition it to ``stopped`` status."""
     eng = get_engine()

@@ -20,4 +20,7 @@ RUN mkdir -p data
 
 EXPOSE 8420
 
+RUN adduser --system --no-create-home polystation
+USER polystation
+
 CMD ["uvicorn", "polystation.dashboard.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8420"]

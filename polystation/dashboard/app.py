@@ -170,11 +170,14 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     """Application factory consumed by uvicorn --factory."""
+    docs_enabled = os.getenv("POLYSTATION_DOCS", "true").lower() == "true"
     app = FastAPI(
         title="Polystation",
         description="Polymarket Trading Station",
         version="3.0.0",
         lifespan=lifespan,
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
     )
 
     # API routers
